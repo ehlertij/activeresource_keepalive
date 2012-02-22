@@ -19,6 +19,23 @@ module ActiveResource
           superclass.keepalive
         end
       end
+
+      def connection(refresh = false)
+        if defined?(@connection) || superclass == Object
+          @connection = Connection.new(site, format) if refresh || @connection.nil?
+          @connection.proxy = proxy if proxy
+          @connection.user = user if user
+          @connection.password = password if password
+          @connection.auth_type = auth_type if auth_type
+          @connection.timeout = timeout if timeout
+          @connection.ssl_options = ssl_options if ssl_options
+          @connection.keepalive = keepalive if keepalive
+          @connection
+        else
+          superclass.connection
+        end
+      end
+
     end
   end
 
@@ -26,22 +43,29 @@ module ActiveResource
     attr_reader :keepalive
 
     class << self
-      def connection_for(site, proxy)
+      def connection_for(site, proxy, keepalive = false)
         @@connections ||= {}
+        return unless keepalive
         if proxy.nil?
           @@connections["#{site.host}:#{site.port}"]
         else
-          @@connections["#{host}:#{port}:#{proxy.host}:#{proxy.port}"]
+          @@connections["#{site.host}:#{site.port}:#{proxy.host}:#{proxy.port}"]
         end
       end
 
       def new_connection(site, proxy)
+        puts "new connection"
         if proxy.nil?
-          @@connections["#{host}:#{port}"] = Net::HTTP.new(site.host, site.port)
+          @@connections["#{site.host}:#{site.port}"] = Net::HTTP.new(site.host, site.port)
         else
-          @@connections["#{host}:#{port}:#{proxy.host}:#{proxy.port}"] = Net::HTTP.new(site.host, site.port, proxy.host, proxy.port, proxy.user, proxy.password)
+          @@connections["#{site.host}:#{site.port}:#{proxy.host}:#{proxy.port}"] = Net::HTTP.new(site.host, site.port, proxy.host, proxy.port, proxy.user, proxy.password)
         end
       end
+    end
+
+    # Sets whether or not to use keep-alive connections.
+    def keepalive=(keepalive)
+      @keepalive = keepalive
     end
 
     # Executes a GET request.
@@ -99,7 +123,7 @@ module ActiveResource
     # Creates new Net::HTTP instance for communication with the
     # remote service and resources.
     def http
-      if connection = self.class.connection_for(@site, @proxy)
+      if connection = self.class.connection_for(@site, @proxy, @keepalive)
         connection
       else
         configure_http(new_http)
